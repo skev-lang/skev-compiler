@@ -34,6 +34,7 @@ pub enum TokenKind {
     OpenBlock,   // >>
     CloseBlock,  // <<
     ColonColon,  // ::
+    Colon,       // :
     PlusEq,      // +=
     MinusEq,     // -=
     StarEq,      // *=
@@ -434,10 +435,10 @@ impl Lexer {
                 Some('=') => (TokenKind::NotEq, 2),
                 _ => (TokenKind::Bang, 1),
             }),
-            ':' => match n {
-                Some(':') => Some((TokenKind::ColonColon, 2)),
-                _ => None,
-            },
+            ':' => Some(match n {
+                Some(':') => (TokenKind::ColonColon, 2),
+                _ => (TokenKind::Colon, 1),
+            }),
             '+' => Some(match n {
                 Some('=') => (TokenKind::PlusEq, 2),
                 _ => (TokenKind::Plus, 1),

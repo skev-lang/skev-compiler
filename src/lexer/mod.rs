@@ -49,6 +49,30 @@ pub enum TokenKind {
     Minus,       // -
     Star,        // *
     Slash,       // /
+
+    // Wrapping operators
+    WrapAdd,           // +%
+    WrapSub,           // -%
+    WrapMul,           // *%
+    WrapAddEq,         // +%=
+    WrapSubEq,         // -%=
+    WrapMulEq,         // *%=
+
+    // Saturating operators
+    SatAdd,            // +|
+    SatSub,            // -|
+    SatMul,            // *|
+    SatAddEq,          // +|=
+    SatSubEq,          // -|=
+    SatMulEq,          // *|=
+
+    // Always-panic operators
+    PanicAdd,          // +!
+    PanicSub,          // -!
+    PanicMul,          // *!
+    PanicAddEq,        // +!=
+    PanicSubEq,        // -!=
+    PanicMulEq,        // *!=
     Eq,          // =
     Dot,         // .
     Comma,       // ,
@@ -421,9 +445,15 @@ impl Lexer {
                 Some('=') => (TokenKind::LtEq, 2),
                 _ => (TokenKind::Lt, 1),
             }),
-            '-' => Some(match n {
-                Some('>') => (TokenKind::RightArrow, 2),
-                Some('=') => (TokenKind::MinusEq, 2),
+            '-' => Some(match (n, self.peek_at(2)) {
+                (Some('%'), Some('=')) => (TokenKind::WrapSubEq, 3),
+                (Some('|'), Some('=')) => (TokenKind::SatSubEq, 3),
+                (Some('!'), Some('=')) => (TokenKind::PanicSubEq, 3),
+                (Some('%'), _) => (TokenKind::WrapSub, 2),
+                (Some('|'), _) => (TokenKind::SatSub, 2),
+                (Some('!'), _) => (TokenKind::PanicSub, 2),
+                (Some('>'), _) => (TokenKind::RightArrow, 2),
+                (Some('='), _) => (TokenKind::MinusEq, 2),
                 _ => (TokenKind::Minus, 1),
             }),
             '=' => Some(match n {
@@ -439,12 +469,24 @@ impl Lexer {
                 Some(':') => (TokenKind::ColonColon, 2),
                 _ => (TokenKind::Colon, 1),
             }),
-            '+' => Some(match n {
-                Some('=') => (TokenKind::PlusEq, 2),
+            '+' => Some(match (n, self.peek_at(2)) {
+                (Some('%'), Some('=')) => (TokenKind::WrapAddEq, 3),
+                (Some('|'), Some('=')) => (TokenKind::SatAddEq, 3),
+                (Some('!'), Some('=')) => (TokenKind::PanicAddEq, 3),
+                (Some('%'), _) => (TokenKind::WrapAdd, 2),
+                (Some('|'), _) => (TokenKind::SatAdd, 2),
+                (Some('!'), _) => (TokenKind::PanicAdd, 2),
+                (Some('='), _) => (TokenKind::PlusEq, 2),
                 _ => (TokenKind::Plus, 1),
             }),
-            '*' => Some(match n {
-                Some('=') => (TokenKind::StarEq, 2),
+            '*' => Some(match (n, self.peek_at(2)) {
+                (Some('%'), Some('=')) => (TokenKind::WrapMulEq, 3),
+                (Some('|'), Some('=')) => (TokenKind::SatMulEq, 3),
+                (Some('!'), Some('=')) => (TokenKind::PanicMulEq, 3),
+                (Some('%'), _) => (TokenKind::WrapMul, 2),
+                (Some('|'), _) => (TokenKind::SatMul, 2),
+                (Some('!'), _) => (TokenKind::PanicMul, 2),
+                (Some('='), _) => (TokenKind::StarEq, 2),
                 _ => (TokenKind::Star, 1),
             }),
             '/' => Some(match n {
@@ -562,5 +604,80 @@ mod tests {
         assert!(matches!(tokens[0].kind, TokenKind::StringStart));
         assert!(matches!(tokens[1].kind, TokenKind::StringContent(_)));
         assert!(matches!(tokens[2].kind, TokenKind::StringEnd));
+    }
+
+    #[test]
+    fn test_wrapping_operators() {
+        let (tokens, errors) = lex("+% -% *%");
+        assert!(errors.is_empty());
+        assert!(matches!(tokens[0].kind, TokenKind::WrapAdd));
+        assert!(matches!(tokens[1].kind, TokenKind::WrapSub));
+        assert!(matches!(tokens[2].kind, TokenKind::WrapMul));
+    }
+
+    #[test]
+    fn test_saturating_operators() {
+        let (tokens, errors) = lex("+| -| *|");
+        assert!(errors.is_empty());
+        assert!(matches!(tokens[0].kind, TokenKind::SatAdd));
+        assert!(matches!(tokens[1].kind, TokenKind::SatSub));
+        assert!(matches!(tokens[2].kind, TokenKind::SatMul));
+    }
+
+    #[test]
+    fn test_panic_operators() {
+        let (tokens, errors) = lex("+! -! *!");
+        assert!(errors.is_empty());
+        assert!(matches!(tokens[0].kind, TokenKind::PanicAdd));
+        assert!(matches!(tokens[1].kind, TokenKind::PanicSub));
+        assert!(matches!(tokens[2].kind, TokenKind::PanicMul));
+    }
+
+    #[test]
+    fn test_augmented_wrapping() {
+        let (tokens, errors) = lex("+%= -%= *%=");
+        assert!(errors.is_empty());
+        assert!(matches!(tokens[0].kind, TokenKind::WrapAddEq));
+        assert!(matches!(tokens[1].kind, TokenKind::WrapSubEq));
+        assert!(matches!(tokens[2].kind, TokenKind::WrapMulEq));
+    }
+
+    #[test]
+    fn test_augmented_saturating() {
+        let (tokens, errors) = lex("+|= -|= *|=");
+        assert!(errors.is_empty());
+        assert!(matches!(tokens[0].kind, TokenKind::SatAddEq));
+        assert!(matches!(tokens[1].kind, TokenKind::SatSubEq));
+        assert!(matches!(tokens[2].kind, TokenKind::SatMulEq));
+    }
+
+    #[test]
+    fn test_augmented_panic() {
+        let (tokens, errors) = lex("+!= -!= *!=");
+        assert!(errors.is_empty());
+        assert!(matches!(tokens[0].kind, TokenKind::PanicAddEq));
+        assert!(matches!(tokens[1].kind, TokenKind::PanicSubEq));
+        assert!(matches!(tokens[2].kind, TokenKind::PanicMulEq));
+    }
+
+    #[test]
+    fn test_panic_assign_vs_not_equal() {
+        // +!= must lex as ONE token (PanicAddEq)
+        // NOT as Plus + NotEq
+        let (tokens, errors) = lex("x +!= y");
+        assert!(errors.is_empty());
+        assert!(matches!(tokens[0].kind, TokenKind::Identifier(_)));
+        assert!(matches!(tokens[1].kind, TokenKind::PanicAddEq));
+        assert!(matches!(tokens[2].kind, TokenKind::Identifier(_)));
+        assert_eq!(tokens.len(), 4); // x, +!=, y, EOF
+    }
+
+    #[test]
+    fn test_panic_op_then_not_equal() {
+        // +! followed by != must lex as TWO tokens
+        let (tokens, errors) = lex("x +! y != z");
+        assert!(errors.is_empty());
+        assert!(matches!(tokens[1].kind, TokenKind::PanicAdd));
+        assert!(matches!(tokens[3].kind, TokenKind::NotEq));
     }
 }

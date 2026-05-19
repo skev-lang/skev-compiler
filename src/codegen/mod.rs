@@ -598,6 +598,15 @@ impl<'ctx> Codegen<'ctx> {
                                             AssignOp::MinusEq => BinOp::Sub,
                                             AssignOp::StarEq => BinOp::Mul,
                                             AssignOp::SlashEq => BinOp::Div,
+                                            AssignOp::WrapAddEq => BinOp::WrapAdd,
+                                            AssignOp::WrapSubEq => BinOp::WrapSub,
+                                            AssignOp::WrapMulEq => BinOp::WrapMul,
+                                            AssignOp::SatAddEq => BinOp::SatAdd,
+                                            AssignOp::SatSubEq => BinOp::SatSub,
+                                            AssignOp::SatMulEq => BinOp::SatMul,
+                                            AssignOp::PanicAddEq => BinOp::PanicAdd,
+                                            AssignOp::PanicSubEq => BinOp::PanicSub,
+                                            AssignOp::PanicMulEq => BinOp::PanicMul,
                                             AssignOp::Eq => unreachable!(),
                                         };
                                         if let Some(combined) =
@@ -620,7 +629,7 @@ impl<'ctx> Codegen<'ctx> {
             Stmt::ExprStmt(e) => {
                 let _ = self.compile_expr(e);
             }
-            Stmt::Fail(e) | Stmt::Succeed(e) => {
+            Stmt::Fail(e) | Stmt::Succeed(e) | Stmt::Result(e) => {
                 if let Some(v) = self.compile_expr(e) {
                     let _ = self.builder.build_return(Some(&v));
                 } else {
@@ -940,9 +949,15 @@ impl<'ctx> Codegen<'ctx> {
             (BasicValueEnum::IntValue(l), BasicValueEnum::IntValue(r)) => {
                 let (l, r) = self.unify_int_widths(l, r);
                 match op {
-                    BinOp::Add => Some(self.builder.build_int_add(l, r, "add").ok()?.into()),
-                    BinOp::Sub => Some(self.builder.build_int_sub(l, r, "sub").ok()?.into()),
-                    BinOp::Mul => Some(self.builder.build_int_mul(l, r, "mul").ok()?.into()),
+                    BinOp::Add | BinOp::WrapAdd | BinOp::SatAdd | BinOp::PanicAdd => {
+                        Some(self.builder.build_int_add(l, r, "add").ok()?.into())
+                    }
+                    BinOp::Sub | BinOp::WrapSub | BinOp::SatSub | BinOp::PanicSub => {
+                        Some(self.builder.build_int_sub(l, r, "sub").ok()?.into())
+                    }
+                    BinOp::Mul | BinOp::WrapMul | BinOp::SatMul | BinOp::PanicMul => {
+                        Some(self.builder.build_int_mul(l, r, "mul").ok()?.into())
+                    }
                     BinOp::Div => Some(
                         self.builder
                             .build_int_signed_div(l, r, "div")
@@ -990,9 +1005,15 @@ impl<'ctx> Codegen<'ctx> {
                 }
             }
             (BasicValueEnum::FloatValue(l), BasicValueEnum::FloatValue(r)) => match op {
-                BinOp::Add => Some(self.builder.build_float_add(l, r, "fadd").ok()?.into()),
-                BinOp::Sub => Some(self.builder.build_float_sub(l, r, "fsub").ok()?.into()),
-                BinOp::Mul => Some(self.builder.build_float_mul(l, r, "fmul").ok()?.into()),
+                BinOp::Add | BinOp::WrapAdd | BinOp::SatAdd | BinOp::PanicAdd => {
+                    Some(self.builder.build_float_add(l, r, "fadd").ok()?.into())
+                }
+                BinOp::Sub | BinOp::WrapSub | BinOp::SatSub | BinOp::PanicSub => {
+                    Some(self.builder.build_float_sub(l, r, "fsub").ok()?.into())
+                }
+                BinOp::Mul | BinOp::WrapMul | BinOp::SatMul | BinOp::PanicMul => {
+                    Some(self.builder.build_float_mul(l, r, "fmul").ok()?.into())
+                }
                 BinOp::Div => Some(self.builder.build_float_div(l, r, "fdiv").ok()?.into()),
                 BinOp::Eq => Some(
                     self.builder

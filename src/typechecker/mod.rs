@@ -390,7 +390,7 @@ impl TypeChecker {
             Stmt::ExprStmt(e) => {
                 let _ = self.type_of_expr(e);
             }
-            Stmt::Fail(e) | Stmt::Succeed(e) | Stmt::Event(e) | Stmt::Await(e) => {
+            Stmt::Fail(e) | Stmt::Succeed(e) | Stmt::Result(e) | Stmt::Event(e) | Stmt::Await(e) => {
                 let _ = self.type_of_expr(e);
             }
             Stmt::If {
@@ -500,7 +500,19 @@ impl TypeChecker {
                     | BinOp::GtEq
                     | BinOp::And
                     | BinOp::Or => SkevType::Bool,
-                    BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div => {
+                    BinOp::Add
+                    | BinOp::Sub
+                    | BinOp::Mul
+                    | BinOp::Div
+                    | BinOp::WrapAdd
+                    | BinOp::WrapSub
+                    | BinOp::WrapMul
+                    | BinOp::SatAdd
+                    | BinOp::SatSub
+                    | BinOp::SatMul
+                    | BinOp::PanicAdd
+                    | BinOp::PanicSub
+                    | BinOp::PanicMul => {
                         if lt == SkevType::Unknown {
                             rt
                         } else {

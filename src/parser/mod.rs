@@ -82,6 +82,7 @@ pub enum Stmt {
     ExprStmt(Expr),
     Fail(Expr),
     Succeed(Expr),
+    Result(Expr),
     Event(Expr),
     Loop {
         condition: Option<Expr>,
@@ -245,6 +246,22 @@ pub enum BinOp {
     Sub,
     Mul,
     Div,
+
+    // Wrapping arithmetic
+    WrapAdd,    // +%
+    WrapSub,    // -%
+    WrapMul,    // *%
+
+    // Saturating arithmetic
+    SatAdd,     // +|
+    SatSub,     // -|
+    SatMul,     // *|
+
+    // Always-panic arithmetic
+    PanicAdd,   // +!
+    PanicSub,   // -!
+    PanicMul,   // *!
+
     Eq,
     NotEq,
     Lt,
@@ -268,6 +285,21 @@ pub enum AssignOp {
     MinusEq,
     StarEq,
     SlashEq,
+
+    // Wrapping assign
+    WrapAddEq,   // +%=
+    WrapSubEq,   // -%=
+    WrapMulEq,   // *%=
+
+    // Saturating assign
+    SatAddEq,    // +|=
+    SatSubEq,    // -|=
+    SatMulEq,    // *|=
+
+    // Panic assign
+    PanicAddEq,  // +!=
+    PanicSubEq,  // -!=
+    PanicMulEq,  // *!=
 }
 
 #[derive(Debug, Clone)]
@@ -841,6 +873,11 @@ impl Parser {
                 let expr = self.parse_expr();
                 Stmt::Succeed(expr)
             }
+            TokenKind::Result => {
+                self.advance();
+                let expr = self.parse_expr();
+                Stmt::Result(expr)
+            }
             TokenKind::Event => {
                 self.advance();
                 let expr = self.parse_expr();
@@ -883,6 +920,15 @@ impl Parser {
                     TokenKind::MinusEq => Some(AssignOp::MinusEq),
                     TokenKind::StarEq => Some(AssignOp::StarEq),
                     TokenKind::SlashEq => Some(AssignOp::SlashEq),
+                    TokenKind::WrapAddEq => Some(AssignOp::WrapAddEq),
+                    TokenKind::WrapSubEq => Some(AssignOp::WrapSubEq),
+                    TokenKind::WrapMulEq => Some(AssignOp::WrapMulEq),
+                    TokenKind::SatAddEq => Some(AssignOp::SatAddEq),
+                    TokenKind::SatSubEq => Some(AssignOp::SatSubEq),
+                    TokenKind::SatMulEq => Some(AssignOp::SatMulEq),
+                    TokenKind::PanicAddEq => Some(AssignOp::PanicAddEq),
+                    TokenKind::PanicSubEq => Some(AssignOp::PanicSubEq),
+                    TokenKind::PanicMulEq => Some(AssignOp::PanicMulEq),
                     _ => None,
                 };
                 if let Some(op) = op {
@@ -1050,8 +1096,17 @@ impl Parser {
                 TokenKind::GtEq => (BinOp::GtEq, 2),
                 TokenKind::Plus => (BinOp::Add, 3),
                 TokenKind::Minus => (BinOp::Sub, 3),
+                TokenKind::WrapAdd => (BinOp::WrapAdd, 3),
+                TokenKind::WrapSub => (BinOp::WrapSub, 3),
+                TokenKind::SatAdd => (BinOp::SatAdd, 3),
+                TokenKind::SatSub => (BinOp::SatSub, 3),
+                TokenKind::PanicAdd => (BinOp::PanicAdd, 3),
+                TokenKind::PanicSub => (BinOp::PanicSub, 3),
                 TokenKind::Star => (BinOp::Mul, 4),
                 TokenKind::Slash => (BinOp::Div, 4),
+                TokenKind::WrapMul => (BinOp::WrapMul, 4),
+                TokenKind::SatMul => (BinOp::SatMul, 4),
+                TokenKind::PanicMul => (BinOp::PanicMul, 4),
                 _ => break,
             };
             if prec < min_prec {
@@ -1454,5 +1509,57 @@ mod tests {
         let (program, errors) = parse_source(src);
         assert!(errors.is_empty());
         assert!(matches!(program.items[0], TopLevel::Extern { .. }));
+    }
+
+    #[test]
+    fn test_parse_wrapping_binop() {
+        let src = "fn f(x: int, y: int) -> int >>\n    result x +% y\n<< f";
+        let (program, errors) = parse_source(src);
+        assert!(errors.is_empty());
+        assert!(matches!(program.items[0], TopLevel::Fn { .. }));
+    }
+
+    #[test]
+    fn test_parse_saturating_binop() {
+        let src = "fn f(x: int, y: int) -> int >>\n    result x +| y\n<< f";
+        let (program, errors) = parse_source(src);
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_parse_panic_binop() {
+        let src = "fn f(x: int, y: int) -> int >>\n    result x +! y\n<< f";
+        let (program, errors) = parse_source(src);
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_parse_wrapping_assign() {
+        let src = "fn f() >>\n    x :: int = 0\n    x +%= 1\n<< f";
+        let (program, errors) = parse_source(src);
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_parse_saturating_assign() {
+        let src = "fn f() >>\n    x :: int = 0\n    x +|= 1\n<< f";
+        let (program, errors) = parse_source(src);
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_parse_panic_assign() {
+        let src = "fn f() >>\n    x :: int = 0\n    x +!= 1\n<< f";
+        let (program, errors) = parse_source(src);
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_overflow_precedence() {
+        // x +% y *% z should parse as x +% (y *% z)
+        // same as x + y * z — multiplicative binds tighter
+        let src = "fn f(x: int, y: int, z: int) -> int >>\n    result x +% y *% z\n<< f";
+        let (program, errors) = parse_source(src);
+        assert!(errors.is_empty());
     }
 }

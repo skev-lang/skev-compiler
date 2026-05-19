@@ -20,6 +20,8 @@ pub enum SkevType {
     Texture2D,
     Sound,
     Music,
+    GameNative(String), // catch-all for game-native types not in the known list
+
     List(Box<SkevType>),
     Array(Box<SkevType>, usize),
     Map(Box<SkevType>, Box<SkevType>),
@@ -185,9 +187,9 @@ impl TypeChecker {
             TypeExpr::List(t) => SkevType::List(Box::new(self.convert_type(t))),
             TypeExpr::Channel(t) => SkevType::Channel(Box::new(self.convert_type(t))),
             TypeExpr::GameNative(s) => match s.as_str() {
-                "Vector3" => SkevType::Vector3,
-                "Color" => SkevType::Color,
-                _ => SkevType::Unknown,
+                "Vector3!" => SkevType::Vector3,
+                "Color!" => SkevType::Color,
+                _ => SkevType::GameNative(s.clone()),
             },
             TypeExpr::Array { ty, size } => SkevType::Array(Box::new(self.convert_type(ty)), *size),
         }
@@ -738,6 +740,27 @@ mod tests {
     #[test]
     fn test_entity_with_when() {
         let src = "entity Player >>\n    when update(delta: float) >>\n    << update\n<< Player";
+        let errors = check(src);
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_typecheck_property_game_native_type() {
+        let src = "entity Player >>\n    pos :: Vector3!\n<< Player";
+        let errors = check(src);
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_typecheck_param_game_native_type() {
+        let src = "fn move_to(target: Vector3!) >>\n<< move_to";
+        let errors = check(src);
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_typecheck_return_game_native_type() {
+        let src = "fn origin() -> Vector3! >>\n<< origin";
         let errors = check(src);
         assert!(errors.is_empty());
     }

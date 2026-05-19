@@ -562,6 +562,7 @@ impl Parser {
     fn looks_like_type(&self) -> bool {
         match self.peek_kind() {
             TokenKind::Maybe | TokenKind::Result => true,
+            TokenKind::GameNativeType(_) => true,
             TokenKind::Identifier(s) => {
                 matches!(
                     s.as_str(),
@@ -1229,6 +1230,10 @@ impl Parser {
                 self.advance();
                 Expr::Identifier(s)
             }
+            TokenKind::GameNativeType(s) => {
+                self.advance();
+                Expr::Identifier(s)
+            }
             TokenKind::StringStart => {
                 self.advance();
                 let mut parts = Vec::new();
@@ -1347,12 +1352,12 @@ impl Parser {
                     TypeExpr::Named("result".to_string())
                 }
             }
+            TokenKind::GameNativeType(name) => {
+                self.advance();
+                TypeExpr::GameNative(name)
+            }
             TokenKind::Identifier(name) => {
                 self.advance();
-                if matches!(self.peek_kind(), TokenKind::Bang) {
-                    self.advance();
-                    return TypeExpr::GameNative(name);
-                }
                 if matches!(self.peek_kind(), TokenKind::LBracket) {
                     self.advance();
                     let mut args = vec![self.parse_type()];
@@ -1559,6 +1564,49 @@ mod tests {
         // x +% y *% z should parse as x +% (y *% z)
         // same as x + y * z — multiplicative binds tighter
         let src = "fn f(x: int, y: int, z: int) -> int >>\n    result x +% y *% z\n<< f";
+        let (program, errors) = parse_source(src);
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_parse_property_game_native_type() {
+        let src = "entity Player >>\n    pos :: Vector3!\n<< Player";
+        let (program, errors) = parse_source(src);
+        assert!(errors.is_empty());
+        assert!(matches!(program.items[0], TopLevel::Entity { .. }));
+    }
+
+    #[test]
+    fn test_parse_param_game_native_type() {
+        let src = "fn move_to(target: Vector3!) >>\n<< move_to";
+        let (program, errors) = parse_source(src);
+        assert!(errors.is_empty());
+        if let TopLevel::Fn { params, .. } = &program.items[0] {
+            assert!(matches!(&params[0].ty, TypeExpr::GameNative(s) if s == "Vector3!"));
+        }
+    }
+
+    #[test]
+    fn test_parse_return_game_native_type() {
+        let src = "fn origin() -> Vector3! >>\n<< origin";
+        let (program, errors) = parse_source(src);
+        assert!(errors.is_empty());
+        if let TopLevel::Fn { ret, .. } = &program.items[0] {
+            assert!(matches!(ret, Some(TypeExpr::GameNative(s)) if s == "Vector3!"));
+        }
+    }
+
+    #[test]
+    fn test_parse_data_field_game_native_type() {
+        let src = "data Particle >>\n    point :: Vector3!\n<< Particle";
+        let (program, errors) = parse_source(src);
+        assert!(errors.is_empty());
+        assert!(matches!(program.items[0], TopLevel::Data { .. }));
+    }
+
+    #[test]
+    fn test_parse_game_native_in_expression() {
+        let src = "fn f() >>\n    Vector3!.zero\n<< f";
         let (program, errors) = parse_source(src);
         assert!(errors.is_empty());
     }

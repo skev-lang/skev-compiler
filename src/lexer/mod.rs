@@ -96,6 +96,7 @@ pub enum TokenKind {
 
     // Identifiers
     Identifier(String),
+    GameNativeType(String), // e.g. "Vector3!", "Color!", "vec3!"
 
     // Comments
     DocComment(String), // #! only
@@ -390,6 +391,16 @@ impl Lexer {
             }
         }
 
+        // If immediately followed by `!`, the whole thing is a game-native type.
+        // Pattern-based: no hardcoded list. Applies before keyword matching so
+        // `Vector3!`, `Color!`, `vec3!`, etc. all become a single token.
+        if self.peek() == Some('!') {
+            self.advance();
+            s.push('!');
+            self.push(TokenKind::GameNativeType(s), line, col);
+            return;
+        }
+
         let kind = match s.as_str() {
             "entity" => TokenKind::Entity,
             "when" => TokenKind::When,
@@ -679,5 +690,75 @@ mod tests {
         assert!(errors.is_empty());
         assert!(matches!(tokens[1].kind, TokenKind::PanicAdd));
         assert!(matches!(tokens[3].kind, TokenKind::NotEq));
+    }
+
+    #[test]
+    fn test_game_native_vector3() {
+        let (tokens, errors) = lex("Vector3!");
+        assert!(errors.is_empty());
+        assert!(matches!(&tokens[0].kind,
+            TokenKind::GameNativeType(s) if s == "Vector3!"));
+        assert!(matches!(tokens[1].kind, TokenKind::EOF));
+    }
+
+    #[test]
+    fn test_game_native_color() {
+        let (tokens, errors) = lex("Color!");
+        assert!(errors.is_empty());
+        assert!(matches!(&tokens[0].kind,
+            TokenKind::GameNativeType(s) if s == "Color!"));
+    }
+
+    #[test]
+    fn test_game_native_quat() {
+        let (tokens, errors) = lex("Quat!");
+        assert!(errors.is_empty());
+        assert!(matches!(&tokens[0].kind,
+            TokenKind::GameNativeType(s) if s == "Quat!"));
+    }
+
+    #[test]
+    fn test_game_native_transform() {
+        let (tokens, errors) = lex("Transform!");
+        assert!(errors.is_empty());
+        assert!(matches!(&tokens[0].kind,
+            TokenKind::GameNativeType(s) if s == "Transform!"));
+    }
+
+    #[test]
+    fn test_game_native_custom_pascal() {
+        let (tokens, errors) = lex("MyCustomRenderer!");
+        assert!(errors.is_empty());
+        assert!(matches!(&tokens[0].kind,
+            TokenKind::GameNativeType(s) if s == "MyCustomRenderer!"));
+    }
+
+    #[test]
+    fn test_game_native_lowercase() {
+        let (tokens, errors) = lex("vec3!");
+        assert!(errors.is_empty());
+        assert!(matches!(&tokens[0].kind,
+            TokenKind::GameNativeType(s) if s == "vec3!"));
+    }
+
+    #[test]
+    fn test_not_eq_still_works() {
+        let (tokens, errors) = lex("!=");
+        assert!(errors.is_empty());
+        assert!(matches!(tokens[0].kind, TokenKind::NotEq));
+    }
+
+    #[test]
+    fn test_bang_alone_still_works() {
+        let (tokens, errors) = lex("!");
+        assert!(errors.is_empty());
+        assert!(matches!(tokens[0].kind, TokenKind::Bang));
+    }
+
+    #[test]
+    fn test_panic_add_eq_still_works() {
+        let (tokens, errors) = lex("+!=");
+        assert!(errors.is_empty());
+        assert!(matches!(tokens[0].kind, TokenKind::PanicAddEq));
     }
 }

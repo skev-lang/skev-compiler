@@ -234,7 +234,7 @@ impl<'ctx> Codegen<'ctx> {
     }
 
     fn build_fn_type(
-        &self,
+        &mut self,
         params: &[Param],
         ret: Option<&TypeExpr>,
         self_entity: Option<&str>,
@@ -394,7 +394,7 @@ impl<'ctx> Codegen<'ctx> {
         self.locals.pop();
     }
 
-    fn emit_default_return(&self, ret: Option<&TypeExpr>) {
+    fn emit_default_return(&mut self, ret: Option<&TypeExpr>) {
         match ret.and_then(|rt| self.skev_type_to_llvm(rt)) {
             Some(BasicTypeEnum::IntType(i)) => {
                 let _ = self.builder.build_return(Some(&i.const_zero()));
@@ -444,7 +444,7 @@ impl<'ctx> Codegen<'ctx> {
 
     // ---- Type conversion ----
 
-    fn skev_type_to_llvm(&self, te: &TypeExpr) -> Option<BasicTypeEnum<'ctx>> {
+    fn skev_type_to_llvm(&mut self, te: &TypeExpr) -> Option<BasicTypeEnum<'ctx>> {
         let ctx = self.context;
         match te {
             TypeExpr::Named(s) => match s.as_str() {
@@ -481,21 +481,51 @@ impl<'ctx> Codegen<'ctx> {
             TypeExpr::List(_) => Some(self.list_struct().as_basic_type_enum()),
             TypeExpr::Channel(_) => Some(ctx.ptr_type(AddressSpace::default()).as_basic_type_enum()),
             TypeExpr::GameNative(s) => match s.as_str() {
-                "Vector3" => {
+                "Vector3!" => {
                     let f = ctx.f64_type();
                     Some(
                         ctx.struct_type(&[f.into(), f.into(), f.into()], false)
                             .as_basic_type_enum(),
                     )
                 }
-                "Color" => {
-                    let i = ctx.i8_type();
+                "Vector2!" => {
+                    let f = ctx.f64_type();
                     Some(
-                        ctx.struct_type(&[i.into(), i.into(), i.into(), i.into()], false)
+                        ctx.struct_type(&[f.into(), f.into()], false)
                             .as_basic_type_enum(),
                     )
                 }
-                _ => Some(ctx.ptr_type(AddressSpace::default()).as_basic_type_enum()),
+                "Color!" => {
+                    let f = ctx.f32_type();
+                    Some(
+                        ctx.struct_type(&[f.into(), f.into(), f.into(), f.into()], false)
+                            .as_basic_type_enum(),
+                    )
+                }
+                "Quat!" => {
+                    let f = ctx.f64_type();
+                    Some(
+                        ctx.struct_type(&[f.into(), f.into(), f.into(), f.into()], false)
+                            .as_basic_type_enum(),
+                    )
+                }
+                "Matrix4!" => {
+                    let f = ctx.f64_type();
+                    let arr = f.array_type(16);
+                    Some(
+                        ctx.struct_type(&[arr.into()], false)
+                            .as_basic_type_enum(),
+                    )
+                }
+                _ => {
+                    self.errors.push(CodegenError {
+                        message: format!(
+                            "warning: unknown game-native type layout for '{}', using opaque pointer",
+                            s
+                        ),
+                    });
+                    Some(ctx.ptr_type(AddressSpace::default()).as_basic_type_enum())
+                }
             },
             TypeExpr::Array { ty, size } => {
                 let inner = self
@@ -1217,5 +1247,43 @@ mod tests {
     fn test_emit_llvm_ir_returns_string() {
         let (ir, _) = compile_src("");
         assert!(!ir.is_empty());
+    }
+
+    #[test]
+    fn test_codegen_vector3_layout() {
+        let src = "entity Player >>\n    pos :: Vector3!\n<< Player";
+        let (ir, errors) = compile_src(src);
+        assert!(errors.is_empty());
+        assert!(
+            ir.contains("double, double, double"),
+            "IR should contain Vector3! struct layout, got:\n{}",
+            ir
+        );
+    }
+
+    #[test]
+    fn test_codegen_color_layout() {
+        let src = "entity Player >>\n    tint :: Color!\n<< Player";
+        let (ir, errors) = compile_src(src);
+        assert!(errors.is_empty());
+        assert!(
+            ir.contains("float, float, float, float"),
+            "IR should contain Color! struct layout, got:\n{}",
+            ir
+        );
+    }
+
+    #[test]
+    fn test_codegen_unknown_game_native_warns() {
+        let src = "entity Player >>\n    mesh :: RenderMesh!\n<< Player";
+        let (ir, errors) = compile_src(src);
+        // No panic — we got here.
+        assert!(!ir.is_empty());
+        // Warning emitted via the errors vec.
+        assert!(
+            errors.iter().any(|e| e.message.contains("RenderMesh!")),
+            "Expected warning about 'RenderMesh!', got: {:?}",
+            errors
+        );
     }
 }

@@ -4,6 +4,7 @@ use crate::parser::{
     BinOp, EntityItem, Expr, Field, MatchArm, MatchPattern, Program, Stmt, StringPart, TopLevel,
     TypeExpr, UnaryOp,
 };
+use crate::types::game_native::{self, BUILTIN_GAME_NATIVE_TYPES};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum SkevType {
@@ -133,7 +134,7 @@ impl TypeChecker {
         });
     }
 
-    fn convert_type(&self, te: &TypeExpr) -> SkevType {
+    fn convert_type(&mut self, te: &TypeExpr) -> SkevType {
         match te {
             TypeExpr::Named(s) => match s.as_str() {
                 "int" => SkevType::Int,
@@ -186,11 +187,32 @@ impl TypeChecker {
             TypeExpr::Result(t) => SkevType::Result(Box::new(self.convert_type(t))),
             TypeExpr::List(t) => SkevType::List(Box::new(self.convert_type(t))),
             TypeExpr::Channel(t) => SkevType::Channel(Box::new(self.convert_type(t))),
-            TypeExpr::GameNative(s) => match s.as_str() {
-                "Vector3!" => SkevType::Vector3,
-                "Color!" => SkevType::Color,
-                _ => SkevType::GameNative(s.clone()),
-            },
+            TypeExpr::GameNative(s) => {
+                if !game_native::is_known(s) {
+                    let stripped = s.trim_end_matches('!');
+                    self.errors.push(TypeError {
+                        message: format!(
+                            "unknown game-native type '{s}'.\n\
+                             If '{stripped}' is an entity, use '{stripped}' or \
+                             'maybe {stripped}' as the type.\n\
+                             Known game-native types: {known}.\n\
+                             User-defined game-native types are not yet \
+                             supported in v1.0.",
+                            s = s,
+                            stripped = stripped,
+                            known = BUILTIN_GAME_NATIVE_TYPES.join(", "),
+                        ),
+                        line: 0,
+                        col: 0,
+                    });
+                    return SkevType::Unknown;
+                }
+                match s.as_str() {
+                    "Vector3!" => SkevType::Vector3,
+                    "Color!" => SkevType::Color,
+                    _ => SkevType::GameNative(s.clone()),
+                }
+            }
             TypeExpr::Array { ty, size } => SkevType::Array(Box::new(self.convert_type(ty)), *size),
         }
     }
@@ -763,5 +785,39 @@ mod tests {
         let src = "fn origin() -> Vector3! >>\n<< origin";
         let errors = check(src);
         assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_typecheck_unknown_game_native_errors() {
+        let src = "entity Player >>\n    pos :: Player!\n<< Player";
+        let errors = check(src);
+        assert!(
+            errors.iter().any(|e| e.message.contains("Player!")),
+            "Expected error mentioning 'Player!', got: {:?}",
+            errors
+        );
+    }
+
+    #[test]
+    fn test_typecheck_known_game_native_no_error() {
+        let src = "entity Mob >>\n    pos :: Vector3!\n<< Mob";
+        let errors = check(src);
+        assert!(errors.is_empty(), "Expected no errors, got: {:?}", errors);
+    }
+
+    #[test]
+    fn test_typecheck_unknown_error_message_quality() {
+        let src = "entity Spawner >>\n    target :: Enemy!\n<< Spawner";
+        let errors = check(src);
+        let msg = errors
+            .iter()
+            .map(|e| e.message.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(msg.contains("Enemy"), "Expected 'Enemy' in message: {msg}");
+        assert!(
+            msg.contains("maybe Enemy"),
+            "Expected 'maybe Enemy' suggestion in message: {msg}"
+        );
     }
 }

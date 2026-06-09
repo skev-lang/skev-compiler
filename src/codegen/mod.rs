@@ -15,6 +15,7 @@ use crate::parser::{
 };
 #[allow(unused_imports)]
 use crate::typechecker::SkevType;
+use crate::types::game_native::{self, GameNativeLayout};
 
 #[derive(Debug, Clone)]
 pub struct CodegenError {
@@ -480,53 +481,52 @@ impl<'ctx> Codegen<'ctx> {
             }
             TypeExpr::List(_) => Some(self.list_struct().as_basic_type_enum()),
             TypeExpr::Channel(_) => Some(ctx.ptr_type(AddressSpace::default()).as_basic_type_enum()),
-            TypeExpr::GameNative(s) => match s.as_str() {
-                "Vector3!" => {
-                    let f = ctx.f64_type();
-                    Some(
-                        ctx.struct_type(&[f.into(), f.into(), f.into()], false)
-                            .as_basic_type_enum(),
-                    )
-                }
-                "Vector2!" => {
-                    let f = ctx.f64_type();
-                    Some(
-                        ctx.struct_type(&[f.into(), f.into()], false)
-                            .as_basic_type_enum(),
-                    )
-                }
-                "Color!" => {
-                    let f = ctx.f32_type();
-                    Some(
-                        ctx.struct_type(&[f.into(), f.into(), f.into(), f.into()], false)
-                            .as_basic_type_enum(),
-                    )
-                }
-                "Quat!" => {
-                    let f = ctx.f64_type();
-                    Some(
-                        ctx.struct_type(&[f.into(), f.into(), f.into(), f.into()], false)
-                            .as_basic_type_enum(),
-                    )
-                }
-                "Matrix4!" => {
-                    let f = ctx.f64_type();
-                    let arr = f.array_type(16);
-                    Some(
+            TypeExpr::GameNative(s) => {
+                let f32t = ctx.f32_type();
+                let st = match game_native::layout_for(s) {
+                    Some(GameNativeLayout::Vec2F32) => {
+                        ctx.struct_type(&[f32t.into(), f32t.into()], false)
+                    }
+                    Some(GameNativeLayout::Vec3F32) => {
+                        ctx.struct_type(&[f32t.into(), f32t.into(), f32t.into()], false)
+                    }
+                    Some(GameNativeLayout::Vec4F32)
+                    | Some(GameNativeLayout::QuatF32)
+                    | Some(GameNativeLayout::ColorF32)
+                    | Some(GameNativeLayout::RectF32) => ctx.struct_type(
+                        &[f32t.into(), f32t.into(), f32t.into(), f32t.into()],
+                        false,
+                    ),
+                    Some(GameNativeLayout::RayF32) => ctx.struct_type(
+                        &[
+                            f32t.into(),
+                            f32t.into(),
+                            f32t.into(),
+                            f32t.into(),
+                            f32t.into(),
+                            f32t.into(),
+                        ],
+                        false,
+                    ),
+                    Some(GameNativeLayout::Transform) => {
+                        let row = f32t.array_type(4);
+                        ctx.struct_type(
+                            &[row.into(), row.into(), row.into(), row.into()],
+                            false,
+                        )
+                    }
+                    Some(GameNativeLayout::Matrix4F32) => {
+                        let arr = f32t.array_type(16);
                         ctx.struct_type(&[arr.into()], false)
-                            .as_basic_type_enum(),
-                    )
-                }
-                _ => {
-                    self.errors.push(CodegenError {
-                        message: format!(
-                            "warning: unknown game-native type layout for '{}', using opaque pointer",
-                            s
-                        ),
-                    });
-                    Some(ctx.ptr_type(AddressSpace::default()).as_basic_type_enum())
-                }
-            },
+                    }
+                    None => panic!(
+                        "codegen reached unknown game-native type '{}' \
+                         — typechecker should have rejected this",
+                        s
+                    ),
+                };
+                Some(st.as_basic_type_enum())
+            }
             TypeExpr::Array { ty, size } => {
                 let inner = self
                     .skev_type_to_llvm(ty)
@@ -1156,7 +1156,18 @@ mod tests {
         let mut codegen = Codegen::new(&context, "test");
         let (tokens, _) = lex(src);
         let (program, _) = parse(tokens);
-        let errors = codegen.compile(&program);
+        let tc_errors = crate::typechecker::typecheck(&program);
+        let mut errors: Vec<CodegenError> = tc_errors
+            .into_iter()
+            .map(|e| CodegenError { message: e.message })
+            .collect();
+        if errors.is_empty() {
+            errors.extend(codegen.compile(&program));
+        } else {
+            // Don't run codegen when typecheck failed — the catch-all is a
+            // compiler-bug panic guard.
+            let _ = codegen.compile(&Program { items: vec![] });
+        }
         let ir = codegen.emit_llvm_ir();
         (ir, errors)
     }
@@ -1255,8 +1266,8 @@ mod tests {
         let (ir, errors) = compile_src(src);
         assert!(errors.is_empty());
         assert!(
-            ir.contains("double, double, double"),
-            "IR should contain Vector3! struct layout, got:\n{}",
+            ir.contains("float, float, float"),
+            "IR should contain Vector3! struct layout (3 × f32), got:\n{}",
             ir
         );
     }
@@ -1274,15 +1285,13 @@ mod tests {
     }
 
     #[test]
-    fn test_codegen_unknown_game_native_warns() {
+    fn test_codegen_unknown_game_native_now_rejected_at_typecheck() {
         let src = "entity Player >>\n    mesh :: RenderMesh!\n<< Player";
-        let (ir, errors) = compile_src(src);
-        // No panic — we got here.
-        assert!(!ir.is_empty());
-        // Warning emitted via the errors vec.
+        let (_ir, errors) = compile_src(src);
+        assert!(!errors.is_empty());
         assert!(
             errors.iter().any(|e| e.message.contains("RenderMesh!")),
-            "Expected warning about 'RenderMesh!', got: {:?}",
+            "Expected typecheck error mentioning 'RenderMesh!', got: {:?}",
             errors
         );
     }

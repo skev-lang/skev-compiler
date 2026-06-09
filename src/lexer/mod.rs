@@ -28,6 +28,59 @@ pub enum TokenKind {
     Every,
     Event,
 
+    // Control flow
+    Stop,
+    Skip,
+    From,
+    To,
+    While,
+    In,
+    As,
+
+    // Logic operators (keyword form)
+    And,
+    Or,
+    Not,
+    Is,
+    Contains,
+    Exists,
+    OrElse,
+
+    // Error handling
+    Assert,
+    Nothing,
+
+    // Declarations
+    Alias,
+    Component,
+    Export,
+    Cdata,
+    Callback,
+    Sandbox,
+    Migration,
+    With,
+    Where,
+    Trace,
+    Bench,
+    BenchRun,
+
+    // Property modifiers
+    Fixed,
+    Hidden,
+    Soa,
+
+    // Additional
+    Cancel,
+    TestSetup,
+
+    // Bitwise operators (keyword form — spec May 2026)
+    Shl,
+    Shr,
+    Band,
+    Bor,
+    Bxor,
+    Bnot,
+
     // Operators
     RightArrow,  // ->
     FatArrow,    // =>
@@ -430,6 +483,45 @@ impl Lexer {
             "event" => TokenKind::Event,
             "true" => TokenKind::BoolLiteral(true),
             "false" => TokenKind::BoolLiteral(false),
+            "stop" => TokenKind::Stop,
+            "skip" => TokenKind::Skip,
+            "from" => TokenKind::From,
+            "to" => TokenKind::To,
+            "while" => TokenKind::While,
+            "in" => TokenKind::In,
+            "as" => TokenKind::As,
+            "and" => TokenKind::And,
+            "or" => TokenKind::Or,
+            "not" => TokenKind::Not,
+            "is" => TokenKind::Is,
+            "contains" => TokenKind::Contains,
+            "exists" => TokenKind::Exists,
+            "or_else" => TokenKind::OrElse,
+            "assert" => TokenKind::Assert,
+            "nothing" => TokenKind::Nothing,
+            "alias" => TokenKind::Alias,
+            "component" => TokenKind::Component,
+            "export" => TokenKind::Export,
+            "cdata" => TokenKind::Cdata,
+            "callback" => TokenKind::Callback,
+            "sandbox" => TokenKind::Sandbox,
+            "migration" => TokenKind::Migration,
+            "with" => TokenKind::With,
+            "where" => TokenKind::Where,
+            "trace" => TokenKind::Trace,
+            "bench" => TokenKind::Bench,
+            "bench_run" => TokenKind::BenchRun,
+            "fixed" => TokenKind::Fixed,
+            "hidden" => TokenKind::Hidden,
+            "soa" => TokenKind::Soa,
+            "cancel" => TokenKind::Cancel,
+            "test_setup" => TokenKind::TestSetup,
+            "shl" => TokenKind::Shl,
+            "shr" => TokenKind::Shr,
+            "band" => TokenKind::Band,
+            "bor" => TokenKind::Bor,
+            "bxor" => TokenKind::Bxor,
+            "bnot" => TokenKind::Bnot,
             _ => TokenKind::Identifier(s),
         };
 
@@ -760,5 +852,110 @@ mod tests {
         let (tokens, errors) = lex("+!=");
         assert!(errors.is_empty());
         assert!(matches!(tokens[0].kind, TokenKind::PanicAddEq));
+    }
+
+    #[test]
+    fn test_keyword_stop() {
+        let (tokens, errors) = lex("stop");
+        assert!(errors.is_empty());
+        assert!(matches!(tokens[0].kind, TokenKind::Stop));
+    }
+
+    #[test]
+    fn test_keyword_skip() {
+        let (tokens, errors) = lex("skip");
+        assert!(errors.is_empty());
+        assert!(matches!(tokens[0].kind, TokenKind::Skip));
+    }
+
+    #[test]
+    fn test_keyword_and() {
+        let (tokens, errors) = lex("and");
+        assert!(errors.is_empty());
+        assert!(matches!(tokens[0].kind, TokenKind::And));
+    }
+
+    #[test]
+    fn test_keyword_or() {
+        let (tokens, errors) = lex("or");
+        assert!(errors.is_empty());
+        assert!(matches!(tokens[0].kind, TokenKind::Or));
+    }
+
+    #[test]
+    fn test_keyword_not() {
+        let (tokens, errors) = lex("not");
+        assert!(errors.is_empty());
+        assert!(matches!(tokens[0].kind, TokenKind::Not));
+    }
+
+    #[test]
+    fn test_keyword_is() {
+        let (tokens, errors) = lex("is");
+        assert!(errors.is_empty());
+        assert!(matches!(tokens[0].kind, TokenKind::Is));
+    }
+
+    #[test]
+    fn test_keyword_contains() {
+        let (tokens, errors) = lex("contains");
+        assert!(errors.is_empty());
+        assert!(matches!(tokens[0].kind, TokenKind::Contains));
+    }
+
+    #[test]
+    fn test_keyword_exists() {
+        let (tokens, errors) = lex("exists");
+        assert!(errors.is_empty());
+        assert!(matches!(tokens[0].kind, TokenKind::Exists));
+    }
+
+    #[test]
+    fn test_keyword_or_else() {
+        let (tokens, errors) = lex("or_else");
+        assert!(errors.is_empty());
+        assert!(matches!(tokens[0].kind, TokenKind::OrElse));
+    }
+
+    #[test]
+    fn test_keyword_nothing() {
+        let (tokens, errors) = lex("nothing");
+        assert!(errors.is_empty());
+        assert!(matches!(tokens[0].kind, TokenKind::Nothing));
+    }
+
+    #[test]
+    fn test_keyword_fixed() {
+        let (tokens, errors) = lex("fixed");
+        assert!(errors.is_empty());
+        assert!(matches!(tokens[0].kind, TokenKind::Fixed));
+    }
+
+    #[test]
+    fn test_keyword_realtime() {
+        let (tokens, errors) = lex("realtime");
+        assert!(errors.is_empty());
+        assert!(matches!(tokens[0].kind, TokenKind::Realtime));
+    }
+
+    #[test]
+    fn test_bitwise_shl() {
+        let (tokens, errors) = lex("shl");
+        assert!(errors.is_empty());
+        assert!(matches!(tokens[0].kind, TokenKind::Shl));
+    }
+
+    #[test]
+    fn test_bitwise_shr() {
+        let (tokens, errors) = lex("shr");
+        assert!(errors.is_empty());
+        assert!(matches!(tokens[0].kind, TokenKind::Shr));
+    }
+
+    #[test]
+    fn test_bitwise_band() {
+        let (tokens, errors) = lex("band");
+        assert!(errors.is_empty());
+        assert!(matches!(tokens[0].kind, TokenKind::Band));
     }
 }

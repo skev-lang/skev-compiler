@@ -267,6 +267,30 @@ impl Lexer {
         let col = self.col;
         self.advance(); // consume '#'
 
+        if self.peek() == Some('{') {
+            self.advance(); // consume '{'
+            loop {
+                match self.peek() {
+                    None => {
+                        self.err(
+                            "unterminated block comment, expected '}#'".to_string(),
+                            line,
+                            col,
+                        );
+                        return;
+                    }
+                    Some('}') if self.peek_at(1) == Some('#') => {
+                        self.advance(); // consume '}'
+                        self.advance(); // consume '#'
+                        return;
+                    }
+                    Some(_) => {
+                        self.advance();
+                    }
+                }
+            }
+        }
+
         if self.peek() == Some('!') {
             self.advance(); // consume '!'
             let mut content = String::new();
@@ -957,5 +981,55 @@ mod tests {
         let (tokens, errors) = lex("band");
         assert!(errors.is_empty());
         assert!(matches!(tokens[0].kind, TokenKind::Band));
+    }
+
+    #[test]
+    fn test_block_comment_single_line() {
+        let (tokens, errors) = lex("#{ this is a comment }#");
+        assert!(errors.is_empty(), "{:?}", errors);
+        assert!(matches!(tokens[0].kind, TokenKind::EOF));
+    }
+
+    #[test]
+    fn test_block_comment_before_code() {
+        let (tokens, errors) = lex("#{ comment }# entity");
+        assert!(errors.is_empty(), "{:?}", errors);
+        assert!(matches!(tokens[0].kind, TokenKind::Entity));
+        assert!(matches!(tokens[1].kind, TokenKind::EOF));
+    }
+
+    #[test]
+    fn test_block_comment_after_code() {
+        let (tokens, errors) = lex("entity #{ comment }#");
+        assert!(errors.is_empty(), "{:?}", errors);
+        assert!(matches!(tokens[0].kind, TokenKind::Entity));
+        assert!(matches!(tokens[1].kind, TokenKind::EOF));
+    }
+
+    #[test]
+    fn test_block_comment_multiline() {
+        let (tokens, errors) = lex("#{ line one\n   line two\n   line three }#");
+        assert!(errors.is_empty(), "{:?}", errors);
+        assert!(matches!(tokens[0].kind, TokenKind::EOF));
+    }
+
+    #[test]
+    fn test_block_comment_empty() {
+        let (tokens, errors) = lex("#{  }#");
+        assert!(errors.is_empty(), "{:?}", errors);
+        assert!(matches!(tokens[0].kind, TokenKind::EOF));
+    }
+
+    #[test]
+    fn test_block_comment_unterminated() {
+        let (_tokens, errors) = lex("#{ this never closes");
+        assert!(!errors.is_empty());
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.message.contains("unterminated block comment")),
+            "Expected unterminated-block-comment error, got: {:?}",
+            errors
+        );
     }
 }

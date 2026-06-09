@@ -679,6 +679,7 @@ impl<'ctx> Codegen<'ctx> {
             Stmt::Loop { body, .. } => {
                 self.compile_loop(body);
             }
+            Stmt::Stop | Stmt::Skip => {}
             Stmt::Every { interval, body } => {
                 let _ = self.compile_expr(interval);
                 self.locals.push(HashMap::new());

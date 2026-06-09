@@ -67,6 +67,13 @@ pub enum EntityItem {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LoopKind {
+    Range,
+    Iterate,
+    While,
+}
+
 #[derive(Debug, Clone)]
 pub enum Stmt {
     VarDecl {
@@ -85,9 +92,16 @@ pub enum Stmt {
     Result(Expr),
     Event(Expr),
     Loop {
+        kind: LoopKind,
+        var_name: Option<String>,
+        from_expr: Option<Expr>,
+        to_expr: Option<Expr>,
+        iterable: Option<Expr>,
         condition: Option<Expr>,
         body: Vec<Stmt>,
     },
+    Stop,
+    Skip,
     Every {
         interval: Expr,
         body: Vec<Stmt>,
@@ -908,6 +922,14 @@ impl Parser {
                 Stmt::Await(expr)
             }
             TokenKind::Task => self.parse_task_stmt(),
+            TokenKind::Stop => {
+                self.advance();
+                Stmt::Stop
+            }
+            TokenKind::Skip => {
+                self.advance();
+                Stmt::Skip
+            }
             _ => {
                 if matches!(self.peek_kind(), TokenKind::Identifier(_))
                     && matches!(self.peek_offset(1).kind, TokenKind::ColonColon)
@@ -975,15 +997,107 @@ impl Parser {
     }
 
     fn parse_loop_stmt(&mut self) -> Stmt {
-        self.advance();
-        while !matches!(self.peek_kind(), TokenKind::OpenBlock | TokenKind::EOF) {
-            self.advance();
+        self.advance(); // consume `loop`
+
+        if matches!(self.peek_kind(), TokenKind::While) {
+            return self.parse_loop_while();
         }
+
+        if matches!(self.peek_kind(), TokenKind::OpenBlock) {
+            self.expect_open_block();
+            let body = self.parse_stmts();
+            self.consume_close();
+            return Stmt::Loop {
+                kind: LoopKind::While,
+                var_name: None,
+                from_expr: None,
+                to_expr: None,
+                iterable: None,
+                condition: None,
+                body,
+            };
+        }
+
+        let var_name = self.parse_identifier();
+        match self.peek_kind() {
+            TokenKind::From => self.parse_loop_range(var_name),
+            TokenKind::In => self.parse_loop_iterate(var_name),
+            _ => {
+                self.error_at_peek(
+                    "Expected 'from' or 'in' after loop variable".to_string(),
+                );
+                while !matches!(self.peek_kind(), TokenKind::OpenBlock | TokenKind::EOF) {
+                    self.advance();
+                }
+                self.expect_open_block();
+                let body = self.parse_stmts();
+                self.consume_close();
+                Stmt::Loop {
+                    kind: LoopKind::Range,
+                    var_name: Some(var_name),
+                    from_expr: None,
+                    to_expr: None,
+                    iterable: None,
+                    condition: None,
+                    body,
+                }
+            }
+        }
+    }
+
+    fn parse_loop_range(&mut self, var_name: String) -> Stmt {
+        self.advance(); // consume `from`
+        let from_expr = self.parse_expr();
+        if matches!(self.peek_kind(), TokenKind::To) {
+            self.advance();
+        } else {
+            self.error_at_peek("Expected 'to' in range loop".to_string());
+        }
+        let to_expr = self.parse_expr();
         self.expect_open_block();
         let body = self.parse_stmts();
         self.consume_close();
         Stmt::Loop {
+            kind: LoopKind::Range,
+            var_name: Some(var_name),
+            from_expr: Some(from_expr),
+            to_expr: Some(to_expr),
+            iterable: None,
             condition: None,
+            body,
+        }
+    }
+
+    fn parse_loop_iterate(&mut self, var_name: String) -> Stmt {
+        self.advance(); // consume `in`
+        let iterable = self.parse_expr();
+        self.expect_open_block();
+        let body = self.parse_stmts();
+        self.consume_close();
+        Stmt::Loop {
+            kind: LoopKind::Iterate,
+            var_name: Some(var_name),
+            from_expr: None,
+            to_expr: None,
+            iterable: Some(iterable),
+            condition: None,
+            body,
+        }
+    }
+
+    fn parse_loop_while(&mut self) -> Stmt {
+        self.advance(); // consume `while`
+        let condition = self.parse_expr();
+        self.expect_open_block();
+        let body = self.parse_stmts();
+        self.consume_close();
+        Stmt::Loop {
+            kind: LoopKind::While,
+            var_name: None,
+            from_expr: None,
+            to_expr: None,
+            iterable: None,
+            condition: Some(condition),
             body,
         }
     }
@@ -1609,5 +1723,140 @@ mod tests {
         let src = "fn f() >>\n    Vector3!.zero\n<< f";
         let (program, errors) = parse_source(src);
         assert!(errors.is_empty());
+    }
+
+    fn fn_body(p: &Program) -> &Vec<Stmt> {
+        match &p.items[0] {
+            TopLevel::Fn { body, .. } => body,
+            _ => panic!("expected fn"),
+        }
+    }
+
+    #[test]
+    fn test_parse_loop_range() {
+        let src = "fn f() >>\n    loop i from 0 to 10 >>\n    << i\n<< f";
+        let (program, errors) = parse_source(src);
+        assert!(errors.is_empty(), "{:?}", errors);
+        let body = fn_body(&program);
+        match &body[0] {
+            Stmt::Loop { kind, var_name, .. } => {
+                assert_eq!(*kind, LoopKind::Range);
+                assert_eq!(var_name.as_deref(), Some("i"));
+            }
+            other => panic!("expected Loop, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_loop_range_expr() {
+        let src = "fn f() >>\n    loop i from start to end >>\n    << i\n<< f";
+        let (program, errors) = parse_source(src);
+        assert!(errors.is_empty(), "{:?}", errors);
+        let body = fn_body(&program);
+        match &body[0] {
+            Stmt::Loop {
+                kind,
+                from_expr,
+                to_expr,
+                ..
+            } => {
+                assert_eq!(*kind, LoopKind::Range);
+                assert!(matches!(from_expr, Some(Expr::Identifier(s)) if s == "start"));
+                assert!(matches!(to_expr, Some(Expr::Identifier(s)) if s == "end"));
+            }
+            other => panic!("expected Loop, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_loop_iterate() {
+        let src = "fn f() >>\n    loop item in items >>\n    << item\n<< f";
+        let (program, errors) = parse_source(src);
+        assert!(errors.is_empty(), "{:?}", errors);
+        let body = fn_body(&program);
+        match &body[0] {
+            Stmt::Loop {
+                kind,
+                var_name,
+                iterable,
+                ..
+            } => {
+                assert_eq!(*kind, LoopKind::Iterate);
+                assert_eq!(var_name.as_deref(), Some("item"));
+                assert!(matches!(iterable, Some(Expr::Identifier(s)) if s == "items"));
+            }
+            other => panic!("expected Loop, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_loop_while() {
+        let src = "fn f() >>\n    loop while alive >>\n    << while alive\n<< f";
+        let (program, errors) = parse_source(src);
+        assert!(errors.is_empty(), "{:?}", errors);
+        let body = fn_body(&program);
+        match &body[0] {
+            Stmt::Loop {
+                kind, condition, ..
+            } => {
+                assert_eq!(*kind, LoopKind::While);
+                assert!(matches!(condition, Some(Expr::Identifier(s)) if s == "alive"));
+            }
+            other => panic!("expected Loop, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_loop_with_body() {
+        let src = "fn f() >>\n    loop i from 0 to 5 >>\n        log(i)\n    << i\n<< f";
+        let (program, errors) = parse_source(src);
+        assert!(errors.is_empty(), "{:?}", errors);
+        let body = fn_body(&program);
+        match &body[0] {
+            Stmt::Loop { body: loop_body, .. } => {
+                assert_eq!(loop_body.len(), 1);
+            }
+            other => panic!("expected Loop, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_loop_nested() {
+        let src = "fn f() >>\n    loop i from 0 to 3 >>\n        loop j from 0 to 3 >>\n        << j\n    << i\n<< f";
+        let (program, errors) = parse_source(src);
+        assert!(errors.is_empty(), "{:?}", errors);
+        let body = fn_body(&program);
+        match &body[0] {
+            Stmt::Loop {
+                body: outer,
+                var_name,
+                ..
+            } => {
+                assert_eq!(var_name.as_deref(), Some("i"));
+                assert_eq!(outer.len(), 1);
+                assert!(
+                    matches!(&outer[0], Stmt::Loop { var_name: Some(n), .. } if n == "j")
+                );
+            }
+            other => panic!("expected Loop, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_stop() {
+        let src = "fn f() >>\n    stop\n<< f";
+        let (program, errors) = parse_source(src);
+        assert!(errors.is_empty(), "{:?}", errors);
+        let body = fn_body(&program);
+        assert!(matches!(body[0], Stmt::Stop));
+    }
+
+    #[test]
+    fn test_parse_skip() {
+        let src = "fn f() >>\n    skip\n<< f";
+        let (program, errors) = parse_source(src);
+        assert!(errors.is_empty(), "{:?}", errors);
+        let body = fn_body(&program);
+        assert!(matches!(body[0], Stmt::Skip));
     }
 }

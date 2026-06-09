@@ -436,16 +436,14 @@ impl TypeChecker {
                     self.symbols.pop_scope();
                 }
             }
-            Stmt::Loop { condition, body } => {
-                if let Some(c) = condition {
-                    let _ = self.type_of_expr(c);
-                }
+            Stmt::Loop { body, .. } => {
                 self.symbols.push_scope();
                 for s in body {
                     self.check_stmt(s);
                 }
                 self.symbols.pop_scope();
             }
+            Stmt::Stop | Stmt::Skip => {}
             Stmt::Every { interval, body } => {
                 let _ = self.type_of_expr(interval);
                 self.symbols.push_scope();

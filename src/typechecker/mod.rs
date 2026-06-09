@@ -521,7 +521,9 @@ impl TypeChecker {
                     | BinOp::LtEq
                     | BinOp::GtEq
                     | BinOp::And
-                    | BinOp::Or => SkevType::Bool,
+                    | BinOp::Or
+                    | BinOp::Is
+                    | BinOp::Contains => SkevType::Bool,
                     BinOp::Add
                     | BinOp::Sub
                     | BinOp::Mul
@@ -534,7 +536,13 @@ impl TypeChecker {
                     | BinOp::SatMul
                     | BinOp::PanicAdd
                     | BinOp::PanicSub
-                    | BinOp::PanicMul => {
+                    | BinOp::PanicMul
+                    | BinOp::Shl
+                    | BinOp::Shr
+                    | BinOp::Band
+                    | BinOp::Bor
+                    | BinOp::Bxor
+                    | BinOp::OrElse => {
                         if lt == SkevType::Unknown {
                             rt
                         } else {
@@ -547,7 +555,8 @@ impl TypeChecker {
                 let t = self.type_of_expr(expr);
                 match op {
                     UnaryOp::Neg => t,
-                    UnaryOp::Not => SkevType::Bool,
+                    UnaryOp::Not | UnaryOp::Exists => SkevType::Bool,
+                    UnaryOp::BNot => t,
                 }
             }
             Expr::Call { callee, args } => {

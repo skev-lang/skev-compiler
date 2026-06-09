@@ -284,12 +284,24 @@ pub enum BinOp {
     GtEq,
     And,
     Or,
+
+    // Keyword operators (CG-6)
+    OrElse,
+    Is,
+    Contains,
+    Shl,
+    Shr,
+    Band,
+    Bor,
+    Bxor,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnaryOp {
     Neg,
     Not,
+    BNot,
+    Exists,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1203,25 +1215,44 @@ impl Parser {
         let mut left = self.parse_unary();
         loop {
             let (op, prec) = match self.peek_kind() {
-                TokenKind::EqEq => (BinOp::Eq, 2),
-                TokenKind::NotEq => (BinOp::NotEq, 2),
-                TokenKind::Lt => (BinOp::Lt, 2),
-                TokenKind::Gt => (BinOp::Gt, 2),
-                TokenKind::LtEq => (BinOp::LtEq, 2),
-                TokenKind::GtEq => (BinOp::GtEq, 2),
-                TokenKind::Plus => (BinOp::Add, 3),
-                TokenKind::Minus => (BinOp::Sub, 3),
-                TokenKind::WrapAdd => (BinOp::WrapAdd, 3),
-                TokenKind::WrapSub => (BinOp::WrapSub, 3),
-                TokenKind::SatAdd => (BinOp::SatAdd, 3),
-                TokenKind::SatSub => (BinOp::SatSub, 3),
-                TokenKind::PanicAdd => (BinOp::PanicAdd, 3),
-                TokenKind::PanicSub => (BinOp::PanicSub, 3),
-                TokenKind::Star => (BinOp::Mul, 4),
-                TokenKind::Slash => (BinOp::Div, 4),
-                TokenKind::WrapMul => (BinOp::WrapMul, 4),
-                TokenKind::SatMul => (BinOp::SatMul, 4),
-                TokenKind::PanicMul => (BinOp::PanicMul, 4),
+                // 1: or-level
+                TokenKind::Or => (BinOp::Or, 1),
+                TokenKind::OrElse => (BinOp::OrElse, 1),
+                // 2: and-level
+                TokenKind::And => (BinOp::And, 2),
+                // 3: comparison
+                TokenKind::EqEq => (BinOp::Eq, 3),
+                TokenKind::NotEq => (BinOp::NotEq, 3),
+                TokenKind::Lt => (BinOp::Lt, 3),
+                TokenKind::Gt => (BinOp::Gt, 3),
+                TokenKind::LtEq => (BinOp::LtEq, 3),
+                TokenKind::GtEq => (BinOp::GtEq, 3),
+                TokenKind::Is => (BinOp::Is, 3),
+                TokenKind::Contains => (BinOp::Contains, 3),
+                // 4: bor
+                TokenKind::Bor => (BinOp::Bor, 4),
+                // 5: bxor
+                TokenKind::Bxor => (BinOp::Bxor, 5),
+                // 6: band
+                TokenKind::Band => (BinOp::Band, 6),
+                // 7: shift
+                TokenKind::Shl => (BinOp::Shl, 7),
+                TokenKind::Shr => (BinOp::Shr, 7),
+                // 8: additive
+                TokenKind::Plus => (BinOp::Add, 8),
+                TokenKind::Minus => (BinOp::Sub, 8),
+                TokenKind::WrapAdd => (BinOp::WrapAdd, 8),
+                TokenKind::WrapSub => (BinOp::WrapSub, 8),
+                TokenKind::SatAdd => (BinOp::SatAdd, 8),
+                TokenKind::SatSub => (BinOp::SatSub, 8),
+                TokenKind::PanicAdd => (BinOp::PanicAdd, 8),
+                TokenKind::PanicSub => (BinOp::PanicSub, 8),
+                // 9: multiplicative
+                TokenKind::Star => (BinOp::Mul, 9),
+                TokenKind::Slash => (BinOp::Div, 9),
+                TokenKind::WrapMul => (BinOp::WrapMul, 9),
+                TokenKind::SatMul => (BinOp::SatMul, 9),
+                TokenKind::PanicMul => (BinOp::PanicMul, 9),
                 _ => break,
             };
             if prec < min_prec {
@@ -1253,6 +1284,22 @@ impl Parser {
                 let e = self.parse_unary();
                 Expr::UnaryOp {
                     op: UnaryOp::Not,
+                    expr: Box::new(e),
+                }
+            }
+            TokenKind::Not => {
+                self.advance();
+                let e = self.parse_unary();
+                Expr::UnaryOp {
+                    op: UnaryOp::Not,
+                    expr: Box::new(e),
+                }
+            }
+            TokenKind::Bnot => {
+                self.advance();
+                let e = self.parse_unary();
+                Expr::UnaryOp {
+                    op: UnaryOp::BNot,
                     expr: Box::new(e),
                 }
             }
@@ -1317,6 +1364,13 @@ impl Parser {
                     left = Expr::Index {
                         object: Box::new(left),
                         index: Box::new(index),
+                    };
+                }
+                TokenKind::Exists => {
+                    self.advance();
+                    left = Expr::UnaryOp {
+                        op: UnaryOp::Exists,
+                        expr: Box::new(left),
                     };
                 }
                 _ => break,
@@ -1858,5 +1912,126 @@ mod tests {
         assert!(errors.is_empty(), "{:?}", errors);
         let body = fn_body(&program);
         assert!(matches!(body[0], Stmt::Skip));
+    }
+
+    #[test]
+    fn test_parse_and_operator() {
+        let src = "fn f() >>\n    if x and y >>\n    << x and y\n<< f";
+        let (_p, errors) = parse_source(src);
+        assert!(errors.is_empty(), "{:?}", errors);
+    }
+
+    #[test]
+    fn test_parse_or_operator() {
+        let src = "fn f() >>\n    if x or y >>\n    << x or y\n<< f";
+        let (_p, errors) = parse_source(src);
+        assert!(errors.is_empty(), "{:?}", errors);
+    }
+
+    #[test]
+    fn test_parse_not_operator() {
+        let src = "fn f() >>\n    if not alive >>\n    << not alive\n<< f";
+        let (program, errors) = parse_source(src);
+        assert!(errors.is_empty(), "{:?}", errors);
+        let body = fn_body(&program);
+        let cond = match &body[0] {
+            Stmt::If { condition, .. } => condition,
+            other => panic!("expected If, got {:?}", other),
+        };
+        assert!(matches!(cond, Expr::UnaryOp { op: UnaryOp::Not, .. }));
+    }
+
+    #[test]
+    fn test_parse_is_operator() {
+        let src = "fn f() >>\n    if val is Enemy >>\n    << val is Enemy\n<< f";
+        let (program, errors) = parse_source(src);
+        assert!(errors.is_empty(), "{:?}", errors);
+        let body = fn_body(&program);
+        let cond = match &body[0] {
+            Stmt::If { condition, .. } => condition,
+            other => panic!("expected If, got {:?}", other),
+        };
+        assert!(matches!(cond, Expr::BinaryOp { op: BinOp::Is, .. }));
+    }
+
+    #[test]
+    fn test_parse_contains_operator() {
+        let src = "fn f() >>\n    if items contains key >>\n    << items contains key\n<< f";
+        let (_p, errors) = parse_source(src);
+        assert!(errors.is_empty(), "{:?}", errors);
+    }
+
+    #[test]
+    fn test_parse_exists_operator() {
+        let src = "fn f() >>\n    if target exists >>\n    << target exists\n<< f";
+        let (program, errors) = parse_source(src);
+        assert!(errors.is_empty(), "{:?}", errors);
+        let body = fn_body(&program);
+        let cond = match &body[0] {
+            Stmt::If { condition, .. } => condition,
+            other => panic!("expected If, got {:?}", other),
+        };
+        assert!(matches!(cond, Expr::UnaryOp { op: UnaryOp::Exists, .. }));
+    }
+
+    #[test]
+    fn test_parse_or_else_operator() {
+        let src = "fn f() >>\n    x :: int = val or_else 0\n<< f";
+        let (program, errors) = parse_source(src);
+        assert!(errors.is_empty(), "{:?}", errors);
+        let body = fn_body(&program);
+        let value = match &body[0] {
+            Stmt::VarDecl { value: Some(v), .. } => v,
+            other => panic!("expected VarDecl, got {:?}", other),
+        };
+        assert!(matches!(value, Expr::BinaryOp { op: BinOp::OrElse, .. }));
+    }
+
+    #[test]
+    fn test_parse_shl_operator() {
+        let src = "fn f() >>\n    x :: int = a shl 4\n<< f";
+        let (program, errors) = parse_source(src);
+        assert!(errors.is_empty(), "{:?}", errors);
+        let body = fn_body(&program);
+        let value = match &body[0] {
+            Stmt::VarDecl { value: Some(v), .. } => v,
+            other => panic!("expected VarDecl, got {:?}", other),
+        };
+        assert!(matches!(value, Expr::BinaryOp { op: BinOp::Shl, .. }));
+    }
+
+    #[test]
+    fn test_parse_shr_operator() {
+        let src = "fn f() >>\n    x :: int = a shr 4\n<< f";
+        let (_p, errors) = parse_source(src);
+        assert!(errors.is_empty(), "{:?}", errors);
+    }
+
+    #[test]
+    fn test_parse_band_operator() {
+        // 255 instead of 0xFF — lexer doesn't support hex literals yet.
+        let src = "fn f() >>\n    x :: int = a band 255\n<< f";
+        let (_p, errors) = parse_source(src);
+        assert!(errors.is_empty(), "{:?}", errors);
+    }
+
+    #[test]
+    fn test_parse_bor_operator() {
+        let src = "fn f() >>\n    x :: int = a bor b\n<< f";
+        let (_p, errors) = parse_source(src);
+        assert!(errors.is_empty(), "{:?}", errors);
+    }
+
+    #[test]
+    fn test_parse_bnot_operator() {
+        let src = "fn f() >>\n    x :: int = bnot flags\n<< f";
+        let (program, errors) = parse_source(src);
+        assert!(errors.is_empty(), "{:?}", errors);
+        let body = fn_body(&program);
+        let value = match &body[0] {
+            Stmt::VarDecl { value: Some(v), .. } => v,
+            other => panic!("expected VarDecl, got {:?}", other),
+        };
+        assert!(matches!(value, Expr::UnaryOp { op: UnaryOp::BNot, .. }));
     }
 }

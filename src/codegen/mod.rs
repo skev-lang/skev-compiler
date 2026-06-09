@@ -869,6 +869,7 @@ impl<'ctx> Codegen<'ctx> {
                         }
                         other => Some(other),
                     },
+                    _ => Some(v),
                 }
             }
             Expr::Call { callee, args } => {
@@ -1033,6 +1034,7 @@ impl<'ctx> Codegen<'ctx> {
                     ),
                     BinOp::And => Some(self.builder.build_and(l, r, "and").ok()?.into()),
                     BinOp::Or => Some(self.builder.build_or(l, r, "or").ok()?.into()),
+                    _ => Some(lv),
                 }
             }
             (BasicValueEnum::FloatValue(l), BasicValueEnum::FloatValue(r)) => match op {

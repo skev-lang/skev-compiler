@@ -417,10 +417,34 @@ impl Lexer {
     fn lex_number(&mut self) {
         let line = self.line;
         let col = self.col;
-        let mut s = String::new();
 
+        if self.peek() == Some('0') {
+            match self.peek_at(1) {
+                Some('x') | Some('X') => {
+                    self.advance(); // '0'
+                    self.advance(); // 'x'
+                    self.lex_radix_int(line, col, 16, |c| c.is_ascii_hexdigit());
+                    return;
+                }
+                Some('b') | Some('B') => {
+                    self.advance(); // '0'
+                    self.advance(); // 'b'
+                    self.lex_radix_int(line, col, 2, |c| c == '0' || c == '1');
+                    return;
+                }
+                Some('o') | Some('O') => {
+                    self.advance(); // '0'
+                    self.advance(); // 'o'
+                    self.lex_radix_int(line, col, 8, |c| ('0'..='7').contains(&c));
+                    return;
+                }
+                _ => {}
+            }
+        }
+
+        let mut s = String::new();
         while let Some(c) = self.peek() {
-            if c.is_ascii_digit() {
+            if c.is_ascii_digit() || c == '_' {
                 s.push(c);
                 self.advance();
             } else {
@@ -435,22 +459,52 @@ impl Lexer {
             s.push('.');
             self.advance(); // consume '.'
             while let Some(c) = self.peek() {
-                if c.is_ascii_digit() {
+                if c.is_ascii_digit() || c == '_' {
                     s.push(c);
                     self.advance();
                 } else {
                     break;
                 }
             }
-            match s.parse::<f64>() {
+            let cleaned: String = s.chars().filter(|&c| c != '_').collect();
+            match cleaned.parse::<f64>() {
                 Ok(f) => self.push(TokenKind::FloatLiteral(f), line, col),
                 Err(_) => self.err(format!("Invalid float literal: {}", s), line, col),
             }
         } else {
-            match s.parse::<i64>() {
+            let cleaned: String = s.chars().filter(|&c| c != '_').collect();
+            match cleaned.parse::<i64>() {
                 Ok(i) => self.push(TokenKind::IntLiteral(i), line, col),
                 Err(_) => self.err(format!("Invalid integer literal: {}", s), line, col),
             }
+        }
+    }
+
+    fn lex_radix_int<F: Fn(char) -> bool>(
+        &mut self,
+        line: usize,
+        col: usize,
+        radix: u32,
+        is_digit: F,
+    ) {
+        let mut s = String::new();
+        while let Some(c) = self.peek() {
+            if is_digit(c) {
+                s.push(c);
+                self.advance();
+            } else if c == '_' {
+                self.advance();
+            } else {
+                break;
+            }
+        }
+        if s.is_empty() {
+            self.push(TokenKind::IntLiteral(0), line, col);
+            return;
+        }
+        match i64::from_str_radix(&s, radix) {
+            Ok(i) => self.push(TokenKind::IntLiteral(i), line, col),
+            Err(_) => self.err(format!("Invalid integer literal: {}", s), line, col),
         }
     }
 
@@ -1031,5 +1085,92 @@ mod tests {
             "Expected unterminated-block-comment error, got: {:?}",
             errors
         );
+    }
+
+    #[test]
+    fn test_int_underscore_separator() {
+        let (tokens, errors) = lex("1_000_000");
+        assert!(errors.is_empty(), "{:?}", errors);
+        assert!(matches!(tokens[0].kind, TokenKind::IntLiteral(1_000_000)));
+    }
+
+    #[test]
+    fn test_int_underscore_single() {
+        let (tokens, errors) = lex("1_0");
+        assert!(errors.is_empty(), "{:?}", errors);
+        assert!(matches!(tokens[0].kind, TokenKind::IntLiteral(10)));
+    }
+
+    #[test]
+    fn test_hex_lowercase() {
+        let (tokens, errors) = lex("0xff");
+        assert!(errors.is_empty(), "{:?}", errors);
+        assert!(matches!(tokens[0].kind, TokenKind::IntLiteral(255)));
+    }
+
+    #[test]
+    fn test_hex_uppercase() {
+        let (tokens, errors) = lex("0xFF");
+        assert!(errors.is_empty(), "{:?}", errors);
+        assert!(matches!(tokens[0].kind, TokenKind::IntLiteral(255)));
+    }
+
+    #[test]
+    fn test_hex_large() {
+        let (tokens, errors) = lex("0xFF0000");
+        assert!(errors.is_empty(), "{:?}", errors);
+        assert!(matches!(tokens[0].kind, TokenKind::IntLiteral(16_711_680)));
+    }
+
+    #[test]
+    fn test_hex_with_underscore() {
+        let (tokens, errors) = lex("0xFF_FF");
+        assert!(errors.is_empty(), "{:?}", errors);
+        assert!(matches!(tokens[0].kind, TokenKind::IntLiteral(65_535)));
+    }
+
+    #[test]
+    fn test_binary_literal() {
+        let (tokens, errors) = lex("0b1010");
+        assert!(errors.is_empty(), "{:?}", errors);
+        assert!(matches!(tokens[0].kind, TokenKind::IntLiteral(10)));
+    }
+
+    #[test]
+    fn test_binary_with_underscore() {
+        let (tokens, errors) = lex("0b1010_1010");
+        assert!(errors.is_empty(), "{:?}", errors);
+        assert!(matches!(tokens[0].kind, TokenKind::IntLiteral(170)));
+    }
+
+    #[test]
+    fn test_octal_literal() {
+        let (tokens, errors) = lex("0o77");
+        assert!(errors.is_empty(), "{:?}", errors);
+        assert!(matches!(tokens[0].kind, TokenKind::IntLiteral(63)));
+    }
+
+    #[test]
+    fn test_octal_with_underscore() {
+        let (tokens, errors) = lex("0o7_7");
+        assert!(errors.is_empty(), "{:?}", errors);
+        assert!(matches!(tokens[0].kind, TokenKind::IntLiteral(63)));
+    }
+
+    #[test]
+    fn test_float_underscore() {
+        let (tokens, errors) = lex("1_000.5");
+        assert!(errors.is_empty(), "{:?}", errors);
+        match tokens[0].kind {
+            TokenKind::FloatLiteral(f) => assert_eq!(f, 1000.5),
+            ref other => panic!("expected FloatLiteral, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_zero_literal_unchanged() {
+        let (tokens, errors) = lex("0");
+        assert!(errors.is_empty(), "{:?}", errors);
+        assert!(matches!(tokens[0].kind, TokenKind::IntLiteral(0)));
     }
 }

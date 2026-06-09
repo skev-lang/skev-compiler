@@ -2009,8 +2009,8 @@ mod tests {
 
     #[test]
     fn test_parse_band_operator() {
-        // 255 instead of 0xFF — lexer doesn't support hex literals yet.
-        let src = "fn f() >>\n    x :: int = a band 255\n<< f";
+        // 0xFF — hex literals now supported (CG-3)
+        let src = "fn f() >>\n    x :: int = a band 0xFF\n<< f";
         let (_p, errors) = parse_source(src);
         assert!(errors.is_empty(), "{:?}", errors);
     }

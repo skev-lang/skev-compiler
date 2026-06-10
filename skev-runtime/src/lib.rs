@@ -1,24 +1,44 @@
-//! Skev ARC Runtime — v1.0
+//! Skev runtime — v1.0
 //!
-//! Static library linked into every Skev executable.
-//! C-ABI surface: skev_alloc / skev_retain / skev_release / skev_dealloc
-//!                skev_init / skev_shutdown
-//!                skev_runtime_panic / skev_runtime_panic_msg
-//!
-//! Module layout (filled in across Steps 2–8 of Phase E):
-//!   alloc — fn-pointer indirection over libc malloc/free (D3, Step 2)
-//!   arc   — retain / release / dealloc                  (D1, D2, D4 — Step 3)
-//!   panic — runtime panic + reason codes                (D10 — Step 4)
-//!   weak  — lazy weak side-table                        (D6 — Step 5)
-//!   leak  — alloc tracker, feature-gated                (D5 — Step 6)
-//!   init  — skev_init / skev_shutdown                   (D9 — Step 7)
-//!
-//! ABI version constant (D8) — wired in Step 8 alongside the
-//! public C-ABI re-exports.
+//! Public C-ABI surface for libskev_runtime.a.
+//! All exported functions are extern "C" with #[unsafe(no_mangle)].
+//! ABI is stable from v1.0.0 — see Chapter 8 ABI Stability.
 
-pub mod alloc;
-pub mod arc;
-pub mod panic;
-pub mod weak;
-pub mod leak;
-pub mod init;
+// Submodule declarations (added incrementally by Steps 1–7)
+mod alloc;
+mod arc;
+mod weak;
+mod panic;
+mod leak;
+mod init;
+
+// ── Public C-ABI surface (Decisions D1 + D10) ──────────────────
+// 12 functions + 1 version constant = 13 stable v1.0 symbols.
+
+// arc.rs — entity / plain-data allocation + refcount (D1, D2, D4)
+pub use arc::{skev_alloc, skev_retain, skev_release, skev_dealloc};
+
+// init.rs — runtime lifecycle (D9)
+pub use init::{skev_init, skev_shutdown};
+
+// panic.rs — runtime panic path + safety handler (D10)
+pub use panic::{
+    skev_runtime_panic,
+    skev_runtime_panic_msg,
+    skev_register_safety_handler,
+};
+
+// weak.rs — weak reference operations (D6)
+pub use weak::{skev_weak_alloc, skev_weak_upgrade, skev_weak_release};
+
+// ── ABI stability symbol (Decision D8) ─────────────────────────
+// Linker-side mismatch detection. v1.x = 1. Increments on major bump.
+// Type MUST be i32 to match the emitted LLVM IR declaration in Phase D:
+//   @skev_runtime_version = external constant i32
+#[unsafe(no_mangle)]
+pub static skev_runtime_version: i32 = 1;
+
+// ── Internal modules (no public surface) ───────────────────────
+// alloc.rs — allocator fn-pointer install (D3)
+// leak.rs  — leak tracker (D5, --features leak-check only)
+// Reachable via crate:: paths from arc / weak / init only.

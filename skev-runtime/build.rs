@@ -2,24 +2,29 @@ use std::env;
 use std::path::PathBuf;
 
 fn main() {
-    let crate_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
+    let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
+    let out_path = PathBuf::from(&crate_dir)
+        .join("..")
+        .join("target")
+        .join("include")
+        .join("skev_runtime.h");
 
-    // workspace target/ is one level up from the runtime crate dir
-    let include_dir = crate_dir.join("..").join("target").join("include");
-    std::fs::create_dir_all(&include_dir).expect("create target/include");
+    std::fs::create_dir_all(out_path.parent().unwrap()).unwrap();
 
-    // Tolerate empty lib in Step 1 — cbindgen returns Err when there
-    // are no extern fns to emit. Real header lands once Step 8 adds
-    // the public C-ABI symbols.
-    if let Ok(bindings) = cbindgen::Builder::new()
+    // The programmatic Builder does NOT auto-load cbindgen.toml — it must
+    // be passed explicitly, or item_types/exclude/guards are silently ignored.
+    let config = cbindgen::Config::from_root_or_default(&crate_dir);
+
+    cbindgen::Builder::new()
         .with_crate(&crate_dir)
-        .with_language(cbindgen::Language::C)
-        .with_include_guard("SKEV_RUNTIME_H")
+        .with_config(config)
         .generate()
-    {
-        bindings.write_to_file(include_dir.join("skev_runtime.h"));
-    }
+        .expect("cbindgen failed — check pub use items resolve and cbindgen >= 0.29 is in [build-dependencies]")
+        .write_to_file(out_path);
 
+    // Regenerate when the surface or generator config changes
+    // (prevents the stale-header problem that masked the 0.27 bug).
     println!("cargo:rerun-if-changed=src/lib.rs");
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=cbindgen.toml");
 }

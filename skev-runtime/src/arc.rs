@@ -61,7 +61,8 @@ pub unsafe extern "C" fn skev_alloc(size: u64, type_id: u32) -> *mut u8 {
         header.store(1, Ordering::Relaxed);
     }
 
-    // #[cfg(feature = "leak-check")] crate::leak::track_alloc(ptr, type_id);
+    #[cfg(feature = "leak-check")]
+    crate::leak::track_alloc(ptr, type_id);
     ptr
 }
 
@@ -116,6 +117,8 @@ pub unsafe extern "C" fn skev_dealloc(ptr: *mut u8) {
     if ptr.is_null() {
         return;
     }
+    #[cfg(feature = "leak-check")]
+    crate::leak::track_dealloc(ptr);
     // SAFETY: ptr came from skev_alloc — caller upholds validity.
     unsafe {
         crate::weak::on_dealloc(ptr);

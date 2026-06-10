@@ -29,12 +29,7 @@ pub const REFCOUNT_OFFSET: usize = 0;
 /// attacker-driven retains across cores before u64 would wrap.
 const MAX_REFCOUNT: u64 = (isize::MAX as u64) / 2;
 
-/// Stub for the lazy init guard (Step 7 wires this to
-/// `crate::init::ensure_init()`).
-#[inline(always)]
-fn ensure_init() {
-    // intentionally empty until Step 7
-}
+use crate::init::ensure_init;
 
 /// Allocate a Skev-managed heap object.
 ///

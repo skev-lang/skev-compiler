@@ -87,12 +87,35 @@ fn concurrent_retain_release() {
     skev_shutdown();
 }
 
+/// Returns true when the test runs under cross-rs / QEMU user-mode
+/// emulation. Subprocess re-exec via Command + current_exe() does not
+/// work reliably there: the child binary is a foreign-arch ELF the
+/// QEMU host cannot exec without re-entering the wrapper.
+///
+/// Detection signals (either is sufficient):
+///   CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER — Cargo's documented
+///       "runner" var; cross-rs sets it to its qemu-aarch64 wrapper.
+///   CROSS_SYSROOT — set inside the cross-rs Docker container (secondary).
+#[cfg(feature = "leak-check")]
+fn is_qemu_or_cross() -> bool {
+    std::env::var_os("CROSS_SYSROOT").is_some()
+        || std::env::var_os("CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER").is_some()
+}
+
 // Test 6: real leak, detected across a process boundary.
 // Re-execs THIS test binary running only this test, with a guard env
 // var set so the child takes the leak path. No separate bin target.
 #[cfg(feature = "leak-check")]
 #[test]
 fn leak_check_reports_leaks_and_exits_two() {
+    if is_qemu_or_cross() {
+        eprintln!(
+            "SKIPPED: subprocess re-exec is hostile to QEMU user-mode \
+             emulation. This test runs natively on aarch64-linux when a \
+             native runner is available."
+        );
+        return;
+    }
     const GUARD: &str = "SKEV_LEAK_CHILD";
     if std::env::var(GUARD).is_ok() {
         // CHILD: leak on purpose (no release/dealloc), then shut down.

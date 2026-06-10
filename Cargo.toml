@@ -1,14 +1,6 @@
-[package]
-name = "skev-compiler"
-version = "0.1.0"
-edition = "2024"
-
-[[bin]]
-name = "skev"
-path = "src/main.rs"
-
-[dependencies]
-inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "master", features = ["llvm18-1"] }
+[workspace]
+members = ["skev-compiler", "skev-runtime"]
+resolver = "2"
 
 [profile.release]
 opt-level = 3

@@ -1,0 +1,19 @@
+[package]
+name = "skev-runtime"
+version = "1.0.0"
+edition = "2024"
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+libc = "0.2"
+
+[build-dependencies]
+cbindgen = "0.27"
+
+[features]
+default = []
+leak-check = []
+mimalloc = []   # reserved — not implemented in v1.0
+no-std = []     # reserved — not implemented in v1.0

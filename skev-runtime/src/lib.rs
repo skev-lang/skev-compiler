@@ -16,7 +16,7 @@
 //! ABI version constant (D8) — wired in Step 8 alongside the
 //! public C-ABI re-exports.
 
-// pub mod alloc;
+pub mod alloc;
 // pub mod arc;
 // pub mod panic;
 // pub mod weak;

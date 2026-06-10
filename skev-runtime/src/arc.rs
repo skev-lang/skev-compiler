@@ -19,6 +19,7 @@
 use core::sync::atomic::{AtomicU64, Ordering, fence};
 
 use crate::alloc::{skev_alloc_raw, skev_free_raw};
+use crate::panic::{REFCOUNT_OVERFLOW, REFCOUNT_UNDERFLOW, skev_runtime_panic};
 
 pub const ENTITY_HEADER_SIZE: usize = 24;
 pub const PLAIN_DATA_HEADER_SIZE: usize = 8;
@@ -27,18 +28,6 @@ pub const REFCOUNT_OFFSET: usize = 0;
 /// Half-of-isize::MAX threshold (D4). Leaves headroom for racing
 /// attacker-driven retains across cores before u64 would wrap.
 const MAX_REFCOUNT: u64 = (isize::MAX as u64) / 2;
-
-// D10 reason codes — duplicated here for Step 3. Step 4 moves the
-// canonical definitions into `crate::panic` and re-routes this file.
-const REFCOUNT_UNDERFLOW: u32 = 1;
-const REFCOUNT_OVERFLOW: u32 = 2;
-
-/// Stub for the runtime panic path (Step 4 replaces this with
-/// `crate::panic::skev_runtime_panic(reason)`).
-fn runtime_panic_stub(_reason: u32) -> ! {
-    eprintln!("skev: stub panic");
-    std::process::abort()
-}
 
 /// Stub for the lazy init guard (Step 7 wires this to
 /// `crate::init::ensure_init()`).
@@ -90,7 +79,7 @@ pub unsafe extern "C" fn skev_retain(ptr: *mut u8) {
         header.fetch_add(1, Ordering::Relaxed)
     };
     if old >= MAX_REFCOUNT {
-        runtime_panic_stub(REFCOUNT_OVERFLOW);
+        skev_runtime_panic(REFCOUNT_OVERFLOW);
     }
 }
 
@@ -107,7 +96,7 @@ pub unsafe extern "C" fn skev_release(ptr: *mut u8) {
         header.fetch_sub(1, Ordering::Release)
     };
     match old {
-        0 => runtime_panic_stub(REFCOUNT_UNDERFLOW),
+        0 => skev_runtime_panic(REFCOUNT_UNDERFLOW),
         1 => {
             // Final drop — pair with Release subs from every prior
             // releasing thread, ensuring the dealloc sees their writes.

@@ -17,3 +17,4 @@ default = []
 leak-check = []
 mimalloc = []   # reserved — not implemented in v1.0
 no-std = []     # reserved — not implemented in v1.0
+test-panic-as-result = []

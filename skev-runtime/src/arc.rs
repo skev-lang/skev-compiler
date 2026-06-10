@@ -116,6 +116,10 @@ pub unsafe extern "C" fn skev_dealloc(ptr: *mut u8) {
     if ptr.is_null() {
         return;
     }
+    // SAFETY: ptr came from skev_alloc — caller upholds validity.
+    unsafe {
+        crate::weak::on_dealloc(ptr);
+    }
     skev_free_raw(ptr);
 }
 

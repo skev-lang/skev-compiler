@@ -19,6 +19,6 @@
 pub mod alloc;
 pub mod arc;
 pub mod panic;
-// pub mod weak;
+pub mod weak;
 // pub mod leak;
 // pub mod init;

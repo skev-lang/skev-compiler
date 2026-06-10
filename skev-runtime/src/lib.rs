@@ -19,7 +19,7 @@ mod init;
 pub use arc::{skev_alloc, skev_retain, skev_release, skev_dealloc};
 
 // init.rs — runtime lifecycle (D9)
-pub use init::{skev_init, skev_shutdown};
+pub use init::{skev_init, skev_shutdown, leak_exit_code};
 
 // panic.rs — runtime panic path + safety handler (D10)
 pub use panic::{

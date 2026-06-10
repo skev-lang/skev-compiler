@@ -1,0 +1,25 @@
+language = "C"
+include_guard = "SKEV_RUNTIME_H"
+pragma_once = true
+documentation = false
+header = "/* Skev Runtime v1.0 — Generated. Do not edit. */"
+# WeakEntry is an opaque handle: its Rust atomic fields have no C
+# representation and callers only ever hold a pointer. Inject a
+# forward-declared typedef and exclude the real (invalid) struct body.
+after_includes = "\ntypedef struct WeakEntry WeakEntry;"
+
+[export]
+prefix = ""
+# Drop WeakEntry's body (opaque, see above) and internal layout/state
+# consts, keeping the header to the stable public ABI + panic reason codes.
+exclude = [
+    "WeakEntry",
+    "ENTITY_HEADER_SIZE",
+    "PLAIN_DATA_HEADER_SIZE",
+    "REFCOUNT_OFFSET",
+    "SHARD_COUNT",
+    "STATE_UNINIT",
+    "STATE_INITING",
+    "STATE_READY",
+    "STATE_SHUTDOWN",
+]

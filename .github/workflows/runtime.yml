@@ -22,9 +22,11 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
           - target: x86_64-apple-darwin
-            os: macos-13
+            # macos-15-intel: last x86_64 macOS runner (GitHub sunset Aug 2027)
+            os: macos-15-intel
           - target: aarch64-apple-darwin
-            os: macos-14
+            # macos-15 (arm64): pinned explicitly; macos-latest flips to macos-26 Jun 2026
+            os: macos-15
           - target: x86_64-pc-windows-msvc
             os: windows-latest
     steps:
@@ -66,7 +68,7 @@ jobs:
       matrix:
         include:
           - target: aarch64-apple-ios
-            os: macos-14
+            os: macos-15
           - target: aarch64-linux-android
             os: ubuntu-latest
     steps:
